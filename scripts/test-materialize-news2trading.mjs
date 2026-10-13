@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
@@ -16,9 +16,15 @@ function filesBelow(root, prefix = '') {
 	})
 }
 
+function temporaryDirectory(t, prefix) {
+	const directory = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), prefix))
+	t.after(() => rmSync(directory, { recursive: true, force: true }))
+	return directory
+}
+
 for (const runtime of ['openclaw', 'hermes']) {
-	test(`materializes a complete ${runtime} news2trading package`, () => {
-		const parent = mkdtempSync(join(tmpdir(), `news2trading-${runtime}-`))
+	test(`materializes a complete ${runtime} news2trading package`, (t) => {
+		const parent = temporaryDirectory(t, `news2trading-${runtime}-`)
 		const output = join(parent, 'news2trading')
 		execFileSync(process.execPath, [script, '--runtime', runtime, '--output', output], {
 			cwd: repo,
@@ -53,13 +59,23 @@ for (const runtime of ['openclaw', 'hermes']) {
 		assert.match(activeSkill, /explicit user request/)
 		assert.match(activeSkill, /Opening or refreshing a page.*never consent/)
 		assert.match(activeSkill, /Cover every supplied asset/)
-		assert.match(activeSkill, /missing news, omitted evidence, unsupported identities and failed\/stale\/uncollected sources explicit/)
+		assert.match(activeSkill, /missing news, omitted evidence, unresolved identities and failed\/stale\/uncollected sources explicit/)
 		assert.match(activeSkill, /Return a normal readable assistant report/)
 		assert.match(activeSkill, /Never return only `NO_REPLY` for this active request/)
 		assert.match(activeSkill, /Do not use `profile\.py` or `publish\.py`, create a subscription\/Topic/)
 		assert.match(activeSkill, /perform extra searches, push Telegram\/LINE, or prepare\/execute trades/)
-		assert.match(activeSkill, /Use only the supplied current-account holdings and last-24-hour PANews evidence/)
-		assert.match(activeAnalysis, /Use only supplied PANews materials/)
+		assert.match(activeSkill, /Use only the supplied current-account holdings and last-24-hour platform-provided news evidence/)
+		assert.match(activeAnalysis, /Use only supplied platform news materials/)
+		assert.match(activeAnalysis, /including stocks, stock-related derivatives and unfamiliar tokens/)
+		assert.match(activeAnalysis, /Preserve the supplied market identity/)
+		assert.match(activeAnalysis, /actual holding tickers and optional aliases, not a fixed asset universe/)
+		assert.match(activeAnalysis, /`queriedAssets`, `requests` and `requestStatus`/)
+		assert.match(activeAnalysis, /do not assign shareholder rights to derivatives/)
+		assert.match(activeAnalysis, /`xsearch` are original X API post text, not Grok-generated summaries or verified facts/)
+		assert.match(activeAnalysis, /source, link and publication time/)
+		assert.match(activeAnalysis, /bounded sample, not a full timeline/)
+		assert.match(activeAnalysis, /local deterministic slices of the original text/)
+		assert.doesNotMatch(activeAnalysis, /xAI-generated search excerpts/)
 		const profileReference = readFileSync(join(output, 'references', 'profile-api.md'), 'utf8')
 		assert.doesNotMatch(`${skill}\n${analysis}\n${profileReference}`, /CoinDesk|Cointelegraph/i)
 		assert.match(activeAnalysis, /For each asset, explain the event/)
@@ -124,8 +140,8 @@ test('Profile API JSON examples use routable event identifiers in requests and r
 	assert.ok(checked >= 2, 'Exercise canonical routing terms in onboarding changes')
 })
 
-test('refuses to materialize over a non-empty directory', () => {
-	const parent = mkdtempSync(join(tmpdir(), 'news2trading-nonempty-'))
+test('refuses to materialize over a non-empty directory', (t) => {
+	const parent = temporaryDirectory(t, 'news2trading-nonempty-')
 	const output = join(parent, 'news2trading')
 	mkdirSync(output)
 	writeFileSync(join(output, 'keep.txt'), 'keep')
